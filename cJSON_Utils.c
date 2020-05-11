@@ -39,6 +39,9 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <limits.h>
+#include <math.h>
+#include <float.h>
+#include <math.h>
 
 #if defined(_MSC_VER)
 #pragma warning (pop)
@@ -50,7 +53,14 @@
 #include "cJSON_Utils.h"
 
 /* define our own boolean type */
+#ifdef true
+#undef true
+#endif
 #define true ((cJSON_bool)1)
+
+#ifdef false
+#undef false
+#endif
 #define false ((cJSON_bool)0)
 
 static unsigned char* cJSONUtils_strdup(const unsigned char* const string)
@@ -97,6 +107,14 @@ static int compare_strings(const unsigned char *string1, const unsigned char *st
 
     return tolower(*string1) - tolower(*string2);
 }
+
+/* securely comparison of floating-point variables */
+static cJSON_bool compare_double(double a, double b)
+{
+    double maxVal = fabs(a) > fabs(b) ? fabs(a) : fabs(b);
+    return (fabs(a - b) <= maxVal * DBL_EPSILON);
+}
+
 
 /* Compare the next path element of two JSON pointers, two NULL pointers are considered unequal: */
 static cJSON_bool compare_pointers(const unsigned char *name, const unsigned char *pointer, const cJSON_bool case_sensitive)
@@ -158,13 +176,14 @@ static void encode_string_as_pointer(unsigned char *destination, const unsigned 
     {
         if (source[0] == '/')
         {
+            destination[0] = '~';
             destination[1] = '1';
             destination++;
         }
         else if (source[0] == '~')
         {
             destination[0] = '~';
-            destination[1] = '1';
+            destination[1] = '0';
             destination++;
         }
         else
@@ -209,6 +228,7 @@ CJSON_PUBLIC(char *) cJSONUtils_FindPointerFromObjectTo(const cJSON * const obje
                 if (child_index > ULONG_MAX)
                 {
                     cJSON_free(target_pointer);
+                    cJSON_free(full_pointer);
                     return NULL;
                 }
                 sprintf((char*)full_pointer, "/%lu%s", (unsigned long)child_index, target_pointer); /* /<array_index><path> */
@@ -499,6 +519,7 @@ static cJSON *sort_list(cJSON *list, const cJSON_bool case_sensitive)
     {
         /* Split the lists */
         second->prev->next = NULL;
+        second->prev = NULL;
     }
 
     /* Recursively sort the sub-lists. */
@@ -510,7 +531,7 @@ static cJSON *sort_list(cJSON *list, const cJSON_bool case_sensitive)
     while ((first != NULL) && (second != NULL))
     {
         cJSON *smaller = NULL;
-        if (compare_strings((unsigned char*)first->string, (unsigned char*)second->string, false) < 0)
+        if (compare_strings((unsigned char*)first->string, (unsigned char*)second->string, case_sensitive) < 0)
         {
             smaller = first;
         }
@@ -587,7 +608,7 @@ static cJSON_bool compare_json(cJSON *a, cJSON *b, const cJSON_bool case_sensiti
     {
         case cJSON_Number:
             /* numeric mismatch. */
-            if ((a->valueint != b->valueint) || (a->valuedouble != b->valuedouble))
+            if ((a->valueint != b->valueint) || (!compare_double(a->valuedouble, b->valuedouble)))
             {
                 return false;
             }
@@ -1127,7 +1148,7 @@ static void create_patches(cJSON * const patches, const unsigned char * const pa
     switch (from->type & 0xFF)
     {
         case cJSON_Number:
-            if ((from->valueint != to->valueint) || (from->valuedouble != to->valuedouble))
+            if ((from->valueint != to->valueint) || !compare_double(from->valuedouble, to->valuedouble))
             {
                 compose_patch(patches, (const unsigned char*)"replace", path, NULL, to);
             }
