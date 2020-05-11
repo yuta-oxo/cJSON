@@ -78,7 +78,12 @@
 #endif
 
 #ifndef NAN
+#if defined(_MSC_VER) && ((_MSC_VER == 1400) || (_MSC_VER == 1500))
+static const unsigned long global_nan[2] = {0xffffffff, 0x7fffffff};
+#define NAN	*(double *)global_nan;
+#else
 #define NAN 0.0/0.0
+#endif
 #endif
 
 typedef struct {
